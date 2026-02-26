@@ -71,14 +71,14 @@ function Standings() {
           <tbody>
             {isConvexEnabled && standingsQuery.isLoading ? (
               <tr>
-                <td colSpan={9} className="font-medium text-gray-500">
+                <td colSpan={9} className="font-medium text-muted">
                   Loading standings...
                 </td>
               </tr>
             ) : null}
             {standings.length === 0 && !(isConvexEnabled && standingsQuery.isLoading) ? (
               <tr>
-                <td colSpan={9} className="font-medium text-gray-500">
+                <td colSpan={9} className="font-medium text-muted">
                   No standings yet. Run `syncLeague` in Convex.
                 </td>
               </tr>
@@ -122,7 +122,7 @@ function Standings() {
         </table>
       </div>
 
-      <div className="mt-4 text-sm text-gray-500 font-medium">
+      <div className="mt-4 text-sm text-muted font-medium">
         Last synced: <span className="font-mono">{lastSyncedLabel}</span>
       </div>
     </div>

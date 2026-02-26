@@ -167,9 +167,19 @@ function buildCategoryBreakdown(
   return rows.filter((row: any) => !helperStatIds.has(String(row.statId)));
 }
 
+function isPlaceholderTeamName(name: unknown) {
+  return typeof name === "string" && /^team\s*\d+$/i.test(name.trim());
+}
+
 function extractTeamNameFromSource(team: any, matchupSide: any, fallbackId?: number) {
   const directTeamName = team?.name;
-  if (typeof directTeamName === "string" && directTeamName.trim()) return directTeamName.trim();
+  if (
+    typeof directTeamName === "string" &&
+    directTeamName.trim() &&
+    !isPlaceholderTeamName(directTeamName)
+  ) {
+    return directTeamName.trim();
+  }
 
   const sideCandidates = [
     matchupSide?.teamName,
@@ -203,7 +213,7 @@ function extractTeamNameFromSource(team: any, matchupSide: any, fallbackId?: num
 }
 
 function mergeTeamDisplay(team: any, matchupSide: any, fallbackId?: number) {
-  const placeholderName = typeof team?.name === "string" && /^team\s+\d+$/i.test(team.name.trim());
+  const placeholderName = isPlaceholderTeamName(team?.name);
   const nestedRecord = team?.record?.overall ?? team?.record ?? team?.raw?.record?.overall ?? team?.raw?.record;
   const wins = team?.wins ?? toNumber(nestedRecord?.wins);
   const losses = team?.losses ?? toNumber(nestedRecord?.losses);
@@ -212,9 +222,9 @@ function mergeTeamDisplay(team: any, matchupSide: any, fallbackId?: number) {
   if (!team) {
     return {
       name: extractTeamNameFromSource(null, matchupSide, fallbackId),
-      wins,
-      losses,
-      ties,
+      wins: toNumber(matchupSide?.record?.wins) ?? wins,
+      losses: toNumber(matchupSide?.record?.losses) ?? losses,
+      ties: toNumber(matchupSide?.record?.ties) ?? ties,
       standingRank: undefined,
     };
   }
@@ -261,6 +271,20 @@ async function getPlayerByEspnId(ctx: any, espnPlayerId: number) {
       q.eq("espnPlayerId", espnPlayerId)
     )
     .first();
+}
+
+async function getTeamByLeagueAndId(ctx: any, leagueKey: string, espnTeamId: number) {
+  const exact = await ctx.db
+    .query("teams")
+    .withIndex("by_leagueKey_teamId", (q: any) =>
+      q.eq("leagueKey", leagueKey).eq("espnTeamId", espnTeamId),
+    )
+    .unique();
+  if (exact) return exact;
+
+  // Fallback if leagueKey drifted between syncs; prefer any matching team id.
+  const allTeams = await ctx.db.query("teams").collect();
+  return allTeams.find((team: any) => team.espnTeamId === espnTeamId) ?? null;
 }
 
 async function resolveMyTeamId(ctx: any, leagueKey: string) {
@@ -367,18 +391,8 @@ export const getCurrentMatchup = query({
       )[0];
 
     const [homeTeam, awayTeam] = await Promise.all([
-      ctx.db
-        .query("teams")
-        .withIndex("by_leagueKey_teamId", (q: any) =>
-          q.eq("leagueKey", leagueKey).eq("espnTeamId", matchup.homeTeamId)
-        )
-        .unique(),
-      ctx.db
-        .query("teams")
-        .withIndex("by_leagueKey_teamId", (q: any) =>
-          q.eq("leagueKey", leagueKey).eq("espnTeamId", matchup.awayTeamId)
-        )
-        .unique(),
+      getTeamByLeagueAndId(ctx, leagueKey, matchup.homeTeamId),
+      getTeamByLeagueAndId(ctx, leagueKey, matchup.awayTeamId),
     ]);
 
     const myTeamIsHome = matchup.homeTeamId === myTeamId;
@@ -447,6 +461,12 @@ export const getCurrentMatchup = query({
       statLabels,
       categoryBreakdown: visibleCategoryRows,
       metaBreakdown: metaRows,
+      debugMatchupStats: {
+        homeScoreByStatKeys: Object.keys(matchup.categories?.home?.scoreByStat ?? {}),
+        awayScoreByStatKeys: Object.keys(matchup.categories?.away?.scoreByStat ?? {}),
+        visibleStatIds: visibleCategoryRows.map((row: any) => row.statId),
+        metaStatIds: metaRows.map((row: any) => row.statId),
+      },
       scoringBreakdown: matchup.categories ?? null,
     };
   },
@@ -627,5 +647,97 @@ export const getSyncLog = query({
       .withIndex("by_startedAt")
       .order("desc")
       .take(limit);
+  },
+});
+
+export const getCurrentMatchupDebug = query({
+  args: {},
+  handler: async (ctx) => {
+    const leagueKey = await resolveLeagueKey(ctx, undefined);
+    if (!leagueKey) return null;
+    const myTeamId = await resolveMyTeamId(ctx, leagueKey);
+    if (myTeamId == null) return null;
+    const league = await ctx.db
+      .query("leagues")
+      .withIndex("by_leagueKey", (q) => q.eq("leagueKey", leagueKey))
+      .unique();
+    const allMatchups = await ctx.db
+      .query("matchups")
+      .withIndex("by_leagueKey", (q) => q.eq("leagueKey", leagueKey))
+      .collect();
+    const relevant = allMatchups.filter(
+      (m) => m.homeTeamId === myTeamId || m.awayTeamId === myTeamId,
+    );
+    if (relevant.length === 0) return null;
+    const currentMatchup =
+      typeof league?.currentMatchupPeriodId === "number"
+        ? relevant.find((m) => m.matchupPeriodId === league.currentMatchupPeriodId)
+        : null;
+    const matchup =
+      currentMatchup ??
+      [...relevant].sort((a, b) => (b.matchupPeriodId ?? 0) - (a.matchupPeriodId ?? 0))[0];
+
+    const [homeTeam, awayTeam] = await Promise.all([
+      getTeamByLeagueAndId(ctx, leagueKey, matchup.homeTeamId),
+      getTeamByLeagueAndId(ctx, leagueKey, matchup.awayTeamId),
+    ]);
+    const myTeamIsHome = matchup.homeTeamId === myTeamId;
+    const rawHome = (matchup as any).raw?.home ?? null;
+    const rawAway = (matchup as any).raw?.away ?? null;
+    const resolvedHome = mergeTeamDisplay(homeTeam, rawHome, matchup.homeTeamId);
+    const resolvedAway = mergeTeamDisplay(awayTeam, rawAway, matchup.awayTeamId);
+    const statLabels = buildStatLabelMap(league?.scoringSettings);
+    const fullCategoryBreakdown = buildCategoryBreakdown(
+      matchup.categories,
+      myTeamIsHome,
+      statLabels,
+    ) ?? [];
+    const homeRaw = rawHome;
+    const awayRaw = rawAway;
+
+    return {
+      matchupPeriodId: matchup.matchupPeriodId,
+      myTeamId,
+      myTeamIsHome,
+      myTeam: myTeamIsHome ? resolvedHome : resolvedAway,
+      opponent: myTeamIsHome ? resolvedAway : resolvedHome,
+      homeTeam: resolvedHome,
+      awayTeam: resolvedAway,
+      scoreByStatKeys: {
+        home: Object.keys(matchup.categories?.home?.scoreByStat ?? {}),
+        away: Object.keys(matchup.categories?.away?.scoreByStat ?? {}),
+      },
+      statLabels,
+      fullCategoryBreakdown,
+      rawTeamNameCandidates: {
+        home: {
+          teamName: homeRaw?.teamName,
+          name: homeRaw?.name,
+          teamNameNested: homeRaw?.team?.name,
+          location: homeRaw?.team?.location ?? homeRaw?.location,
+          nickname: homeRaw?.team?.nickname ?? homeRaw?.nickname,
+          abbrev: homeRaw?.team?.abbrev ?? homeRaw?.abbrev,
+          record: homeRaw?.record,
+        },
+        away: {
+          teamName: awayRaw?.teamName,
+          name: awayRaw?.name,
+          teamNameNested: awayRaw?.team?.name,
+          location: awayRaw?.team?.location ?? awayRaw?.location,
+          nickname: awayRaw?.team?.nickname ?? awayRaw?.nickname,
+          abbrev: awayRaw?.team?.abbrev ?? awayRaw?.abbrev,
+          record: awayRaw?.record,
+        },
+      },
+      leagueScoringSettingsShape: {
+        hasScoringSettings: Boolean(league?.scoringSettings),
+        statSettingsType: Array.isArray(league?.scoringSettings?.statSettings)
+          ? "array"
+          : typeof league?.scoringSettings?.statSettings,
+        statSettingKeys: Array.isArray(league?.scoringSettings?.statSettings)
+          ? (league?.scoringSettings?.statSettings ?? []).map((s: any) => s?.id ?? s?.statId)
+          : Object.keys(league?.scoringSettings?.statSettings ?? {}),
+      },
+    };
   },
 });

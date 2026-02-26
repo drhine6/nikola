@@ -125,18 +125,18 @@ function Matchups() {
                 {theirWins}
               </span>
             </div>
-            <div className="text-xs font-bold uppercase text-gray-400 mt-1">Categories</div>
+            <div className="text-xs font-bold uppercase text-muted mt-1">Categories</div>
             {matchup.scoreSummary?.myTies || matchup.scoreSummary?.opponentTies ? (
-              <div className="text-xs font-mono text-gray-500 mt-1">
+              <div className="text-xs font-mono text-muted mt-1">
                 Ties: {matchup.scoreSummary?.myTies ?? 0}
               </div>
             ) : null}
           </div>
           <div className="text-center flex-1">
             <div className="text-lg font-black uppercase">{matchup.opponent.name}</div>
-            <div className="text-sm font-mono text-gray-500">{matchup.opponent.record}</div>
+            <div className="text-sm font-mono text-muted">{matchup.opponent.record}</div>
             {typeof oppGamesPlayed === 'number' || typeof oppAcq === 'number' ? (
-              <div className="mt-2 text-xs font-bold text-gray-500 space-y-1">
+              <div className="mt-2 text-xs font-bold text-muted space-y-1">
                 {typeof oppGamesPlayed === 'number' ? <div>Games: {oppGamesPlayed}</div> : null}
                 {typeof oppAcq === 'number' ? <div>Matchup Acq: {oppAcq}</div> : null}
               </div>
@@ -153,7 +153,7 @@ function Matchups() {
             className={`brutal-card p-4 ${cat.winning ? 'border-brutal-green' : 'border-brutal-red'}`}
             style={{ borderColor: cat.winning ? '#2ECC71' : '#E74C3C' }}
           >
-            <div className="text-xs font-black uppercase text-gray-400 mb-2">
+            <div className="text-xs font-black uppercase text-muted mb-2">
               {cat.name}
             </div>
             <div className="flex justify-between items-end">
@@ -168,7 +168,7 @@ function Matchups() {
                   : cat.theirs}
               </div>
             </div>
-            <div className="flex justify-between text-xs font-bold text-gray-400 mt-1">
+            <div className="flex justify-between text-xs font-bold text-muted mt-1">
               <span>ME</span>
               <span>OPP</span>
             </div>
@@ -176,7 +176,7 @@ function Matchups() {
         ))}
       </div>
 
-      <div className="mt-4 text-sm text-gray-500 font-medium">
+      <div className="mt-4 text-sm text-muted font-medium">
         Last synced: <span className="font-mono">{lastSyncedLabel}</span>
       </div>
     </div>

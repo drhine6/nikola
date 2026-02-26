@@ -97,14 +97,14 @@ function SyncLog() {
           <tbody>
             {isConvexEnabled && syncLogQuery.isLoading ? (
               <tr>
-                <td colSpan={6} className="font-medium text-gray-500">
+                <td colSpan={6} className="font-medium text-muted">
                   Loading sync history...
                 </td>
               </tr>
             ) : null}
             {logs.length === 0 && !(isConvexEnabled && syncLogQuery.isLoading) ? (
               <tr>
-                <td colSpan={6} className="font-medium text-gray-500">
+                <td colSpan={6} className="font-medium text-muted">
                   No sync runs logged yet. Trigger `syncSchedule` or `syncLeague`.
                 </td>
               </tr>
@@ -113,7 +113,7 @@ function SyncLog() {
               <tr key={log.id}>
                 <td>
                   <div className="font-bold">{formatTime(log.timestamp)}</div>
-                  <div className="text-xs text-gray-400">{formatDate(log.timestamp)}</div>
+                  <div className="text-xs text-muted">{formatDate(log.timestamp)}</div>
                 </td>
                 <td><TypeBadge type={log.type} /></td>
                 <td><StatusBadge status={log.status} /></td>
@@ -131,7 +131,7 @@ function SyncLog() {
                   {log.error ? (
                     <span className="text-brutal-red font-medium">{log.error}</span>
                   ) : (
-                    <span className="text-gray-300">—</span>
+                    <span className="text-muted">—</span>
                   )}
                 </td>
               </tr>

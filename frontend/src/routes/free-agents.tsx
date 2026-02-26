@@ -23,7 +23,7 @@ function TrendBadge({ trend }: { trend: string }) {
   const config: Record<string, { label: string; color: string }> = {
     up: { label: 'HOT', color: 'bg-brutal-green text-brutal-white' },
     down: { label: 'COLD', color: 'bg-brutal-red text-brutal-white' },
-    neutral: { label: 'STEADY', color: 'bg-gray-300 text-brutal-black' },
+    neutral: { label: 'STEADY', color: 'bg-gray-300 dark:bg-gray-600 text-brutal-black dark:text-brutal-white' },
   }
   const { label, color } = config[trend] || config.neutral
   return <span className={`brutal-tag ${color}`}>{label}</span>
@@ -81,7 +81,7 @@ function FreeAgents() {
             {isConvexEnabled ? 'Free Agents Loaded: ' : 'Acquisitions Left: '}
           </span>
           <span className="text-xl font-black">{isConvexEnabled ? freeAgents.length : 5}</span>
-          <span className="text-gray-400 font-mono">{isConvexEnabled ? '' : '/7'}</span>
+          <span className="text-muted font-mono">{isConvexEnabled ? '' : '/7'}</span>
         </div>
       </div>
 
@@ -114,14 +114,14 @@ function FreeAgents() {
           <tbody>
             {isConvexEnabled && freeAgentsQuery.isLoading ? (
               <tr>
-                <td colSpan={13} className="font-medium text-gray-500">
+                <td colSpan={13} className="font-medium text-muted">
                   Loading free agents...
                 </td>
               </tr>
             ) : null}
             {freeAgents.length === 0 && !(isConvexEnabled && freeAgentsQuery.isLoading) ? (
               <tr>
-                <td colSpan={13} className="font-medium text-gray-500">
+                <td colSpan={13} className="font-medium text-muted">
                   No free agent data yet. Run `syncLeague` to populate the player pool.
                 </td>
               </tr>
@@ -151,7 +151,7 @@ function FreeAgents() {
         </table>
       </div>
 
-      <div className="mt-4 text-sm text-gray-500 font-medium">
+      <div className="mt-4 text-sm text-muted font-medium">
         Last synced: <span className="font-mono">{lastSyncedLabel}</span>
       </div>
     </div>

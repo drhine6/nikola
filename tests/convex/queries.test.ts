@@ -41,8 +41,8 @@ describe('queries.getCurrentMatchup', () => {
       await ctx.db.insert('teams', {
         leagueKey: '12345:2026',
         espnTeamId: 2,
-        // Simulate missing team name in teams table so query falls back to matchup raw fields.
-        name: '',
+        // Simulate placeholder ESPN name so query falls back to matchup raw fields.
+        name: 'Team2',
         ownerDisplayNames: ['Me'],
         wins: 10,
         losses: 7,
@@ -53,7 +53,7 @@ describe('queries.getCurrentMatchup', () => {
       await ctx.db.insert('teams', {
         leagueKey: '12345:2026',
         espnTeamId: 6,
-        name: '',
+        name: 'Team 6',
         ownerDisplayNames: ['Them'],
         wins: 11,
         losses: 6,
@@ -166,5 +166,11 @@ describe('queries.getCurrentMatchup', () => {
       { statId: '37', name: 'MATCHUP ACQ', mine: 0, theirs: 2, winning: false },
       { statId: '42', name: 'GAMES PLAYED', mine: 8, theirs: 9, winning: false },
     ])
+    expect((matchup as any).debugMatchupStats).toMatchObject({
+      homeScoreByStatKeys: expect.arrayContaining(['44']),
+      awayScoreByStatKeys: expect.arrayContaining(['44']),
+      visibleStatIds: expect.arrayContaining(['44']),
+      metaStatIds: ['37', '42'],
+    })
   })
 })
