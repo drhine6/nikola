@@ -510,6 +510,62 @@ async function hydrateTeamRoster(ctx: any, leagueKey: string, teamId: number) {
   });
 }
 
+function extractEspnCurrentScoringPeriodLine(playerDoc: any, scoringPeriodId?: number) {
+  if (scoringPeriodId == null) return null;
+  const statsRows = Array.isArray(playerDoc?.raw?.stats) ? playerDoc.raw.stats : [];
+  const row = statsRows.find(
+    (s: any) =>
+      toNumber(s?.statSourceId) === 0 &&
+      toNumber(s?.statSplitTypeId) === 5 &&
+      toNumber(s?.scoringPeriodId) === scoringPeriodId
+  );
+  const stats = row?.stats;
+  if (!stats || typeof stats !== "object") return null;
+
+  // ESPN player game-split stat namespace (different from matchup scoreByStat namespace).
+  const line = {
+    min: toNumber((stats as any)["40"]),
+    pts: toNumber((stats as any)["0"]),
+    reb: toNumber((stats as any)["6"]),
+    ast: toNumber((stats as any)["3"]),
+    stl: toNumber((stats as any)["2"]),
+    blk: toNumber((stats as any)["1"]),
+    fg3m: toNumber((stats as any)["17"]),
+    dd: toNumber((stats as any)["37"]),
+  };
+
+  const hasAnyValue = Object.values(line).some(
+    (v) => typeof v === "number" && Number.isFinite(v)
+  );
+  if (!hasAnyValue) return null;
+
+  return {
+    statType: "game",
+    gameDate: undefined,
+    fantasyScore: undefined,
+    stats: line,
+    source: "espn_current_scoring_period",
+  };
+}
+
+function backfillRosterRowsWithEspnCurrentScoringPeriod(
+  rows: any[],
+  scoringPeriodId?: number
+) {
+  return rows.map((row: any) => {
+    if (row?.stats?.latestGame) return row;
+    const fallbackLatest = extractEspnCurrentScoringPeriodLine(row?.player, scoringPeriodId);
+    if (!fallbackLatest) return row;
+    return {
+      ...row,
+      stats: {
+        ...(row?.stats ?? {}),
+        latestGame: fallbackLatest,
+      },
+    };
+  });
+}
+
 async function resolveMyTeamId(ctx: any, leagueKey: string) {
   const envTeamId = process.env.TEAM_ID;
   if (envTeamId && !Number.isNaN(Number(envTeamId))) return Number(envTeamId);
@@ -775,6 +831,7 @@ export const getCurrentMatchupRosters = query({
       hydrateTeamRoster(ctx, leagueKey, myTeamId),
       hydrateTeamRoster(ctx, leagueKey, opponentTeamId),
     ]);
+    const currentScoringPeriodId = toNumber(league?.currentScoringPeriodId);
 
     return {
       matchupPeriodId: matchup.matchupPeriodId,
@@ -783,8 +840,14 @@ export const getCurrentMatchupRosters = query({
       myTeamIsHome,
       myTeam,
       opponent,
-      myRoster,
-      opponentRoster,
+      myRoster: backfillRosterRowsWithEspnCurrentScoringPeriod(
+        myRoster,
+        currentScoringPeriodId
+      ),
+      opponentRoster: backfillRosterRowsWithEspnCurrentScoringPeriod(
+        opponentRoster,
+        currentScoringPeriodId
+      ),
     };
   },
 });
