@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-brutal-black: #000000;
   --color-brutal-white: #ffffff;
@@ -13,39 +15,63 @@
   --color-brutal-gray: #f5f5f5;
 }
 
+:root {
+  --brutal-bg: #f5f5f5;
+  --brutal-surface: #ffffff;
+  --brutal-text: #000000;
+  --brutal-border: #000000;
+  --brutal-shadow: #000000;
+  --brutal-muted: #6b7280;
+  --brutal-table-stripe: #f5f5f5;
+  --brutal-table-header: #000000;
+}
+
+.dark {
+  --brutal-bg: #121212;
+  --brutal-surface: #1e1e1e;
+  --brutal-text: #e5e5e5;
+  --brutal-border: #3a3a3a;
+  --brutal-shadow: #000000;
+  --brutal-muted: #9ca3af;
+  --brutal-table-stripe: #252525;
+  --brutal-table-header: #2a2a2a;
+}
+
 body {
   font-family:
     "Inter",
     system-ui,
     -apple-system,
     sans-serif;
-  background-color: var(--color-brutal-gray);
+  background-color: var(--brutal-bg);
+  color: var(--brutal-text);
 }
 
 .brutal-card {
-  background: var(--color-brutal-white);
-  border: 3px solid var(--color-brutal-black);
-  box-shadow: 4px 4px 0px var(--color-brutal-black);
+  background: var(--brutal-surface);
+  border: 3px solid var(--brutal-border);
+  box-shadow: 4px 4px 0px var(--brutal-shadow);
 }
 
 .brutal-btn {
   background: var(--color-brutal-yellow);
-  border: 3px solid var(--color-brutal-black);
-  box-shadow: 4px 4px 0px var(--color-brutal-black);
+  border: 3px solid var(--brutal-border);
+  box-shadow: 4px 4px 0px var(--brutal-shadow);
   font-weight: 700;
   text-transform: uppercase;
   padding: 0.5rem 1rem;
   cursor: pointer;
   transition: all 0.1s ease;
+  color: var(--color-brutal-black);
 }
 
 .brutal-btn:hover {
-  box-shadow: 2px 2px 0px var(--color-brutal-black);
+  box-shadow: 2px 2px 0px var(--brutal-shadow);
   transform: translate(2px, 2px);
 }
 
 .brutal-btn:active {
-  box-shadow: 0px 0px 0px var(--color-brutal-black);
+  box-shadow: 0px 0px 0px var(--brutal-shadow);
   transform: translate(4px, 4px);
 }
 
@@ -53,11 +79,11 @@ body {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  border: 3px solid var(--color-brutal-black);
+  border: 3px solid var(--brutal-border);
 }
 
 .brutal-table th {
-  background: var(--color-brutal-black);
+  background: var(--brutal-table-header);
   color: var(--color-brutal-white);
   font-weight: 800;
   text-transform: uppercase;
@@ -69,7 +95,7 @@ body {
 
 .brutal-table td {
   padding: 0.75rem 1rem;
-  border-bottom: 2px solid var(--color-brutal-black);
+  border-bottom: 2px solid var(--brutal-border);
   font-weight: 500;
 }
 
@@ -78,14 +104,18 @@ body {
 }
 
 .brutal-table tr:nth-child(even) {
-  background: var(--color-brutal-gray);
+  background: var(--brutal-table-stripe);
 }
 
 .brutal-tag {
   display: inline-block;
   padding: 0.125rem 0.5rem;
-  border: 2px solid var(--color-brutal-black);
+  border: 2px solid var(--brutal-border);
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.text-muted {
+  color: var(--brutal-muted);
 }

@@ -160,6 +160,26 @@ function computeFantasyScore(stats: AnyRecord) {
   return pts + reb + ast + (stl * 3) + (blk * 3) + fg3m - tov;
 }
 
+function extractMatchupSideScore(side: AnyRecord | undefined) {
+  if (!side) return undefined;
+  return (
+    toNumber(side.totalPoints) ??
+    toNumber(side.totalScore) ??
+    toNumber(side.cumulativeScore?.wins) ??
+    toNumber(side.cumulativeScore?.score)
+  );
+}
+
+function extractMatchupCategories(matchup: AnyRecord) {
+  if (matchup.categories != null) return matchup.categories;
+  const home = matchup.home?.cumulativeScore ?? matchup.home?.categories;
+  const away = matchup.away?.cumulativeScore ?? matchup.away?.categories;
+  if (home != null || away != null) {
+    return cleanValue({ home, away });
+  }
+  return undefined;
+}
+
 function inferGameStatus(statusRaw: any) {
   const statusText =
     (typeof statusRaw === "string" ? statusRaw : undefined) ??
@@ -382,10 +402,18 @@ function parseEspnLeagueBundle(
       scoringPeriodId: toNumber(matchup.scoringPeriodId),
       homeTeamId,
       awayTeamId,
-      homeScore: toNumber(matchup.home?.totalPoints ?? matchup.home?.pointsByScoringPeriod?.[String(matchup.scoringPeriodId ?? "")]),
-      awayScore: toNumber(matchup.away?.totalPoints ?? matchup.away?.pointsByScoringPeriod?.[String(matchup.scoringPeriodId ?? "")]),
+      homeScore:
+        extractMatchupSideScore(matchup.home) ??
+        toNumber(
+          matchup.home?.pointsByScoringPeriod?.[String(matchup.scoringPeriodId ?? "")]
+        ),
+      awayScore:
+        extractMatchupSideScore(matchup.away) ??
+        toNumber(
+          matchup.away?.pointsByScoringPeriod?.[String(matchup.scoringPeriodId ?? "")]
+        ),
       winner: matchup.winner != null ? String(matchup.winner) : undefined,
-      categories: matchup.categories ?? matchup.home?.cumulativeScore,
+      categories: extractMatchupCategories(matchup),
       isPlayoff: matchup.playoffTierType != null,
       raw: matchup,
       updatedAt: fetchedAt,

@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { convexQuery } from '@convex-dev/react-query'
 import { api, asNumber, convexArgs, formatAgoFromMs, isConvexEnabled } from '~/lib/convex-bridge'
+import { normalizeCategoryBreakdown, toRecordString } from '~/lib/matchup'
 
 export const Route = createFileRoute('/matchups')({
   component: Matchups,
@@ -25,50 +26,11 @@ const mockMatchup = {
   ],
 }
 
-function toRecordString(team: any) {
-  if (!team) return '—'
-  const wins = asNumber(team.wins)
-  const losses = asNumber(team.losses)
-  const ties = asNumber(team.ties)
-  return `${wins}-${losses}-${ties}`
-}
-
-function normalizeCategoryBreakdown(raw: any, matchup: any) {
-  if (Array.isArray(raw)) {
-    return raw.map((cat: any) => ({
-      name: String(cat.name ?? cat.stat ?? 'CAT'),
-      mine: asNumber(cat.mine ?? cat.home ?? cat.myScore),
-      theirs: asNumber(cat.theirs ?? cat.away ?? cat.opponentScore),
-      winning: Boolean(cat.winning),
-    }))
-  }
-
-  if (raw && typeof raw === 'object') {
-    const entries = Object.entries(raw)
-      .filter(([, value]) => value && typeof value === 'object')
-      .slice(0, 9)
-      .map(([name, value]: [string, any]) => {
-        const mine = asNumber(value.home ?? value.mine ?? value.value ?? 0)
-        const theirs = asNumber(value.away ?? value.theirs ?? value.opponent ?? 0)
-        const turnovers = name.toUpperCase() === 'TO'
-        return {
-          name: name.toUpperCase(),
-          mine,
-          theirs,
-          winning: turnovers ? mine < theirs : mine > theirs,
-        }
-      })
-    if (entries.length > 0) return entries
-  }
-
-  return [
-    {
-      name: 'TOTAL',
-      mine: asNumber(matchup?.homeScore),
-      theirs: asNumber(matchup?.awayScore),
-      winning: asNumber(matchup?.homeScore) >= asNumber(matchup?.awayScore),
-    },
-  ]
+type MatchupCategoryRow = {
+  name: string
+  mine: number
+  theirs: number
+  winning: boolean
 }
 
 function Matchups() {
@@ -79,19 +41,45 @@ function Matchups() {
     ? {
         week: matchupQuery.data.matchupPeriodId ?? matchupQuery.data.scoringPeriodId ?? '—',
         myTeam: {
-          name: matchupQuery.data.homeTeam?.name ?? `Team ${matchupQuery.data.homeTeamId}`,
-          record: toRecordString(matchupQuery.data.homeTeam),
+          name:
+            matchupQuery.data.myTeam?.name ??
+            `Team ${matchupQuery.data.myTeamId ?? matchupQuery.data.homeTeamId}`,
+          record: toRecordString(matchupQuery.data.myTeam),
         },
         opponent: {
-          name: matchupQuery.data.awayTeam?.name ?? `Team ${matchupQuery.data.awayTeamId}`,
-          record: toRecordString(matchupQuery.data.awayTeam),
+          name:
+            matchupQuery.data.opponent?.name ??
+            `Team ${
+              matchupQuery.data.myTeamIsHome
+                ? matchupQuery.data.awayTeamId
+                : matchupQuery.data.homeTeamId
+            }`,
+          record: toRecordString(matchupQuery.data.opponent),
         },
-        categories: normalizeCategoryBreakdown(matchupQuery.data.scoringBreakdown, matchupQuery.data),
+        categories:
+          (Array.isArray((matchupQuery.data as any).categoryBreakdown)
+            ? (matchupQuery.data as any).categoryBreakdown
+            : null) ?? normalizeCategoryBreakdown(matchupQuery.data.scoringBreakdown, matchupQuery.data),
+        meta: Array.isArray((matchupQuery.data as any).metaBreakdown)
+          ? (matchupQuery.data as any).metaBreakdown
+          : [],
+        scoreSummary: (matchupQuery.data as any).matchupScoreSummary ?? null,
+        headerMyCategories: asNumber((matchupQuery.data as any).myScore, NaN),
+        headerOppCategories: asNumber((matchupQuery.data as any).opponentScore, NaN),
       }
-    : mockMatchup
+    : { ...mockMatchup, meta: [], scoreSummary: null, headerMyCategories: NaN, headerOppCategories: NaN }
 
-  const myWins = matchup.categories.filter((c) => c.winning).length
-  const theirWins = matchup.categories.filter((c) => !c.winning).length
+  const fallbackMyWins = (matchup.categories as MatchupCategoryRow[]).filter((c) => c.winning).length
+  const fallbackTheirWins = (matchup.categories as MatchupCategoryRow[]).filter((c) => !c.winning).length
+  const myWins = Number.isFinite(matchup.headerMyCategories) ? matchup.headerMyCategories : fallbackMyWins
+  const theirWins = Number.isFinite(matchup.headerOppCategories)
+    ? matchup.headerOppCategories
+    : fallbackTheirWins
+  const metaByName = new Map((matchup.meta as any[]).map((row) => [String(row.name), row]))
+  const myGamesPlayed = metaByName.get('GAMES PLAYED')?.mine
+  const oppGamesPlayed = metaByName.get('GAMES PLAYED')?.theirs
+  const myAcq = metaByName.get('MATCHUP ACQ')?.mine
+  const oppAcq = metaByName.get('MATCHUP ACQ')?.theirs
   const lastSyncedMs = (syncLogQuery.data?.[0] as any)?.finishedAt ?? (syncLogQuery.data?.[0] as any)?.startedAt
   const lastSyncedLabel = isConvexEnabled ? formatAgoFromMs(lastSyncedMs) : '2 minutes ago'
 
@@ -119,30 +107,47 @@ function Matchups() {
         <div className="flex items-center justify-between">
           <div className="text-center flex-1">
             <div className="text-lg font-black uppercase">{matchup.myTeam.name}</div>
-            <div className="text-sm font-mono text-gray-500">{matchup.myTeam.record}</div>
+            <div className="text-sm font-mono text-muted">{matchup.myTeam.record}</div>
+            {typeof myGamesPlayed === 'number' || typeof myAcq === 'number' ? (
+              <div className="mt-2 text-xs font-bold text-muted space-y-1">
+                {typeof myGamesPlayed === 'number' ? <div>Games: {myGamesPlayed}</div> : null}
+                {typeof myAcq === 'number' ? <div>Matchup Acq: {myAcq}</div> : null}
+              </div>
+            ) : null}
           </div>
           <div className="text-center px-8">
             <div className="flex items-center gap-3">
               <span className={`text-5xl font-black ${myWins > theirWins ? 'text-brutal-green' : 'text-brutal-red'}`}>
                 {myWins}
               </span>
-              <span className="text-3xl font-bold text-gray-300">-</span>
+              <span className="text-3xl font-bold text-muted">-</span>
               <span className={`text-5xl font-black ${theirWins > myWins ? 'text-brutal-green' : 'text-brutal-red'}`}>
                 {theirWins}
               </span>
             </div>
             <div className="text-xs font-bold uppercase text-gray-400 mt-1">Categories</div>
+            {matchup.scoreSummary?.myTies || matchup.scoreSummary?.opponentTies ? (
+              <div className="text-xs font-mono text-gray-500 mt-1">
+                Ties: {matchup.scoreSummary?.myTies ?? 0}
+              </div>
+            ) : null}
           </div>
           <div className="text-center flex-1">
             <div className="text-lg font-black uppercase">{matchup.opponent.name}</div>
             <div className="text-sm font-mono text-gray-500">{matchup.opponent.record}</div>
+            {typeof oppGamesPlayed === 'number' || typeof oppAcq === 'number' ? (
+              <div className="mt-2 text-xs font-bold text-gray-500 space-y-1">
+                {typeof oppGamesPlayed === 'number' ? <div>Games: {oppGamesPlayed}</div> : null}
+                {typeof oppAcq === 'number' ? <div>Matchup Acq: {oppAcq}</div> : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
 
       {/* Category breakdown */}
       <div className="grid grid-cols-3 gap-4">
-        {matchup.categories.map((cat) => (
+        {(matchup.categories as MatchupCategoryRow[]).map((cat) => (
           <div
             key={cat.name}
             className={`brutal-card p-4 ${cat.winning ? 'border-brutal-green' : 'border-brutal-red'}`}

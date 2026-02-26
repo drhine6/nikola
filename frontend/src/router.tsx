@@ -56,7 +56,12 @@ export function createRouter() {
 let routerSingleton: ReturnType<typeof createRouter> | null = null
 
 export function getRouter() {
-  if (!routerSingleton) {
+  // TanStack Start SSR must get a fresh router per request; reusing a singleton
+  // can retain consumed streams across renders ("ReadableStream is locked").
+  if (import.meta.env.SSR) {
+    return createRouter()
+  }
+  if (routerSingleton === null) {
     routerSingleton = createRouter()
   }
   return routerSingleton

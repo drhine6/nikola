@@ -84,7 +84,7 @@ function MyTeam() {
             ) : (
               <>
                 <span className={18 > 20 ? 'text-brutal-orange' : ''}>18</span>
-                <span className="text-gray-400">/25</span>
+                <span className="text-muted">/25</span>
               </>
             )}
           </span>
@@ -120,14 +120,14 @@ function MyTeam() {
           <tbody>
             {isConvexEnabled && rosterQuery.isLoading ? (
               <tr>
-                <td colSpan={13} className="font-medium text-gray-500">
+                <td colSpan={13} className="font-medium text-muted">
                   Loading roster...
                 </td>
               </tr>
             ) : null}
             {roster.length === 0 && !(isConvexEnabled && rosterQuery.isLoading) ? (
               <tr>
-                <td colSpan={13} className="font-medium text-gray-500">
+                <td colSpan={13} className="font-medium text-muted">
                   No roster data yet. Run `syncLeague` in Convex, then refresh.
                 </td>
               </tr>
@@ -157,7 +157,7 @@ function MyTeam() {
         </table>
       </div>
 
-      <div className="mt-4 text-sm text-gray-500 font-medium">
+      <div className="mt-4 text-sm text-muted font-medium">
         Last synced: <span className="font-mono">{lastSyncedLabel}</span>
       </div>
     </div>
