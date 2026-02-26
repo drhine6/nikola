@@ -1,0 +1,13 @@
+[project]
+name = "nikola-explore"
+version = "0.1.0"
+description = "ESPN Fantasy Basketball API exploration"
+requires-python = ">=3.11"
+dependencies = [
+    "espn-api",
+    "jupyter",
+    "ipykernel",
+    "python-dotenv",
+    "pandas",
+    "tabulate",
+]
