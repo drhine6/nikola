@@ -173,6 +173,136 @@ function buildCategoryBreakdown(
   return rows.filter((row: any) => !helperStatIds.has(String(row.statId)));
 }
 
+function extractScoringPeriodIdsFromSide(side: any): number[] {
+  const pointsByScoringPeriod = side?.pointsByScoringPeriod;
+  if (!pointsByScoringPeriod || typeof pointsByScoringPeriod !== "object")
+    return [];
+  return Object.keys(pointsByScoringPeriod)
+    .map((key) => toNumber(key))
+    .filter((n): n is number => typeof n === "number");
+}
+
+function extractMatchupScoringPeriodIds(matchup: any, league: any): number[] {
+  const ids = new Set<number>();
+  const rawHome = matchup?.raw?.home;
+  const rawAway = matchup?.raw?.away;
+  for (const id of extractScoringPeriodIdsFromSide(rawHome)) ids.add(id);
+  for (const id of extractScoringPeriodIdsFromSide(rawAway)) ids.add(id);
+  const directScoringPeriodId = toNumber(matchup?.scoringPeriodId);
+  if (directScoringPeriodId != null) ids.add(directScoringPeriodId);
+
+  const isCurrentMatchup =
+    toNumber(matchup?.matchupPeriodId) != null &&
+    toNumber(league?.currentMatchupPeriodId) != null &&
+    Number(matchup.matchupPeriodId) === Number(league.currentMatchupPeriodId);
+  const currentLeagueScoringPeriodId = toNumber(league?.currentScoringPeriodId);
+  if (isCurrentMatchup && currentLeagueScoringPeriodId != null) {
+    ids.add(currentLeagueScoringPeriodId);
+  }
+
+  return Array.from(ids).sort((a, b) => a - b);
+}
+
+function collectPlayerIdsFromEntries(entries: any): Set<number> {
+  const ids = new Set<number>();
+  const rows = Array.isArray(entries) ? entries : [];
+  for (const entry of rows) {
+    const playerId = toNumber(entry?.playerId ?? entry?.playerPoolEntry?.player?.id);
+    if (playerId != null) ids.add(playerId);
+  }
+  return ids;
+}
+
+function collectLikelyMatchupPlayerIds(sideRaw: any): Set<number> {
+  const ids = new Set<number>();
+  const addAll = (set: Set<number>) => {
+    for (const id of set) ids.add(id);
+  };
+
+  addAll(collectPlayerIdsFromEntries(sideRaw?.rosterForMatchupPeriod?.entries));
+  addAll(
+    collectPlayerIdsFromEntries(sideRaw?.rosterForMatchupPeriodDelayed?.entries)
+  );
+
+  const currentEntries = Array.isArray(sideRaw?.rosterForCurrentScoringPeriod?.entries)
+    ? sideRaw.rosterForCurrentScoringPeriod.entries
+    : [];
+  for (const entry of currentEntries) {
+    const slotId = toNumber(entry?.lineupSlotId);
+    if (slotId != null && (slotId === 12 || slotId === 13)) continue;
+    const playerId = toNumber(entry?.playerId ?? entry?.playerPoolEntry?.player?.id);
+    if (playerId != null) ids.add(playerId);
+  }
+
+  return ids;
+}
+
+function sumDerivedMatchupPlayerStat(
+  team: any,
+  scoringPeriodIds: number[],
+  candidatePlayerIds: Set<number>,
+  statId: string
+) {
+  const periodSet = new Set(scoringPeriodIds);
+  const entries = Array.isArray(team?.raw?.roster?.entries)
+    ? team.raw.roster.entries
+    : [];
+  let total = 0;
+  for (const entry of entries) {
+    const player = entry?.playerPoolEntry?.player ?? entry?.player ?? null;
+    const playerId = toNumber(player?.id);
+    if (playerId == null) continue;
+    if (candidatePlayerIds.size > 0 && !candidatePlayerIds.has(playerId)) continue;
+    const statsRows = Array.isArray(player?.stats) ? player.stats : [];
+    for (const row of statsRows) {
+      if (toNumber(row?.statSourceId) !== 0) continue;
+      if (toNumber(row?.statSplitTypeId) !== 5) continue;
+      const scoringPeriodId = toNumber(row?.scoringPeriodId);
+      if (scoringPeriodId == null || !periodSet.has(scoringPeriodId)) continue;
+      total += toNumber(row?.stats?.[statId]) ?? 0;
+    }
+  }
+  return total;
+}
+
+function buildDerivedDdRow(args: {
+  matchup: any;
+  league: any;
+  myTeamIsHome: boolean;
+  homeTeam: any;
+  awayTeam: any;
+}) {
+  const scoringPeriodIds = extractMatchupScoringPeriodIds(args.matchup, args.league);
+  if (scoringPeriodIds.length === 0) return null;
+
+  const homePlayerIds = collectLikelyMatchupPlayerIds(args.matchup?.raw?.home ?? null);
+  const awayPlayerIds = collectLikelyMatchupPlayerIds(args.matchup?.raw?.away ?? null);
+  const homeDd = sumDerivedMatchupPlayerStat(
+    args.homeTeam,
+    scoringPeriodIds,
+    homePlayerIds,
+    "37"
+  );
+  const awayDd = sumDerivedMatchupPlayerStat(
+    args.awayTeam,
+    scoringPeriodIds,
+    awayPlayerIds,
+    "37"
+  );
+  if (homeDd === 0 && awayDd === 0) return null;
+
+  const mine = args.myTeamIsHome ? homeDd : awayDd;
+  const theirs = args.myTeamIsHome ? awayDd : homeDd;
+  return {
+    statId: "44",
+    name: "DD",
+    mine,
+    theirs,
+    winning: mine > theirs,
+    derived: true,
+  };
+}
+
 function isPlaceholderTeamName(name: unknown) {
   return typeof name === "string" && /^team\s*\d+$/i.test(name.trim());
 }
@@ -521,7 +651,18 @@ export const getCurrentMatchup = query({
     const oppCategoryLosses = myTeamIsHome ? awayLosses : homeLosses;
     const myCategoryTies = myTeamIsHome ? homeTies : awayTies;
     const oppCategoryTies = myTeamIsHome ? awayTies : homeTies;
-    const rawRows = Array.isArray(categoryBreakdown) ? categoryBreakdown : [];
+    const rawRows = Array.isArray(categoryBreakdown) ? [...categoryBreakdown] : [];
+    const hasDdRow = rawRows.some((row: any) => String(row?.statId) === "44");
+    if (!hasDdRow) {
+      const derivedDdRow = buildDerivedDdRow({
+        matchup,
+        league,
+        myTeamIsHome,
+        homeTeam: resolvedHomeTeam,
+        awayTeam: resolvedAwayTeam,
+      });
+      if (derivedDdRow) rawRows.push(derivedDdRow);
+    }
     const metaRows = rawRows.filter(
       (row: any) => row?.statId === "37" || row?.statId === "42"
     );
