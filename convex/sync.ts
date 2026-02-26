@@ -191,6 +191,12 @@ function parseEspnLeagueBundle(
   const season = toNumber(raw.seasonId) ?? envSeason();
   const leagueKey = `${espnLeagueId}:${season}`;
   const members = Array.isArray(raw.members) ? raw.members : [];
+  const teamsArray = Array.isArray(raw.teams) ? raw.teams : [];
+  const scheduleArray = Array.isArray(raw.schedule) ? raw.schedule : [];
+  const freeAgentArray =
+    (Array.isArray(raw.players) && raw.players) ||
+    (Array.isArray(raw.playerPoolEntries) && raw.playerPoolEntries) ||
+    [];
   const memberMap = new Map<string, string>();
   for (const member of members) {
     const id = String(member.id ?? "");
@@ -209,11 +215,42 @@ function parseEspnLeagueBundle(
     currentMatchupPeriodId: toNumber(raw.status?.currentMatchupPeriod ?? raw.currentMatchupPeriod),
     scoringSettings: raw.settings?.scoringSettings,
     config: {
-      settings: raw.settings,
-      status: raw.status,
+      status: {
+        currentMatchupPeriod: raw.status?.currentMatchupPeriod,
+        firstScoringPeriod: raw.status?.firstScoringPeriod,
+        finalScoringPeriod: raw.status?.finalScoringPeriod,
+        isActive: raw.status?.isActive,
+      },
+      settings: {
+        name: raw.settings?.name ?? raw.name,
+        size: raw.settings?.size,
+        scoringType: raw.settings?.scoringSettings?.scoringType,
+        matchupPeriodCount: raw.settings?.scheduleSettings?.matchupPeriodCount,
+        matchupPeriodLength: raw.settings?.scheduleSettings?.matchupPeriodLength,
+        acquisitionLimit: raw.settings?.acquisitionSettings?.acquisitionLimit,
+        acquisitionType: raw.settings?.acquisitionSettings?.acquisitionType,
+        lineupSlotCounts: raw.settings?.rosterSettings?.lineupSlotCounts,
+      },
+      entityCounts: {
+        members: members.length,
+        teams: teamsArray.length,
+        schedule: scheduleArray.length,
+        freeAgents: freeAgentArray.length,
+      },
       scoringPeriodId: raw.scoringPeriodId,
     },
-    raw,
+    raw: {
+      id: raw.id,
+      seasonId: raw.seasonId,
+      scoringPeriodId: raw.scoringPeriodId,
+      segmentId: raw.segmentId,
+      viewSummary: {
+        teams: teamsArray.length,
+        schedule: scheduleArray.length,
+        members: members.length,
+        freeAgents: freeAgentArray.length,
+      },
+    },
     updatedAt: fetchedAt,
   });
 
@@ -221,7 +258,7 @@ function parseEspnLeagueBundle(
   const rosterRows: RosterRow[] = [];
   const playerRows = new Map<string, PlayerRow>();
 
-  for (const team of Array.isArray(raw.teams) ? raw.teams : []) {
+  for (const team of teamsArray) {
     const teamId = toNumber(team.id);
     if (teamId === undefined) continue;
 
@@ -289,10 +326,7 @@ function parseEspnLeagueBundle(
     }
   }
 
-  const freeAgentCandidates =
-    (Array.isArray(raw.players) && raw.players) ||
-    (Array.isArray(raw.playerPoolEntries) && raw.playerPoolEntries) ||
-    [];
+  const freeAgentCandidates = freeAgentArray;
   for (const item of freeAgentCandidates) {
     const entry = item.playerPoolEntry ?? item;
     const player = entry.player ?? item.player ?? {};
@@ -335,7 +369,7 @@ function parseEspnLeagueBundle(
   }
 
   const matchupRows: MatchupRow[] = [];
-  for (const matchup of Array.isArray(raw.schedule) ? raw.schedule : []) {
+  for (const matchup of scheduleArray) {
     const matchupPeriodId = toNumber(matchup.matchupPeriodId);
     const homeTeamId = toNumber(matchup.home?.teamId);
     const awayTeamId = toNumber(matchup.away?.teamId);
