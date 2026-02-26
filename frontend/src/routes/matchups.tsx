@@ -39,12 +39,154 @@ type MatchupCategoryRow = {
   winning: boolean;
 };
 
+type MatchupRosterRow = {
+  roster?: { _id?: string; espnPlayerId?: number; injuryStatus?: string };
+  player?: {
+    fullName?: string;
+    position?: string;
+    positions?: string[];
+    nbaTeamAbbr?: string;
+    injuryStatus?: string;
+  };
+  stats?: {
+    latestGame?: {
+      gameDate?: string;
+      stats?: Record<string, number | string>;
+    };
+  };
+};
+
+function formatCategoryValue(cat: MatchupCategoryRow, value: number) {
+  return cat.name.includes("%") ? `${(value * 100).toFixed(1)}%` : value;
+}
+
+function scoreString(wins: number, losses: number, ties: number) {
+  return ties > 0 ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
+}
+
+function InjuryBadge({ status }: { status: string }) {
+  if (!status || status === "ACTIVE") return null;
+  const colors: Record<string, string> = {
+    DAY_TO_DAY: "bg-brutal-yellow text-brutal-black",
+    OUT: "bg-brutal-red text-brutal-white",
+    SUSPENSION: "bg-brutal-orange text-brutal-white",
+  };
+  return (
+    <span className={`brutal-tag ${colors[status] || "bg-brutal-gray"}`}>
+      {status.replaceAll("_", " ")}
+    </span>
+  );
+}
+
+function computeDailyDd(stats?: Record<string, number | string>) {
+  if (!stats) return 0;
+  const categories = ["pts", "reb", "ast", "stl", "blk"];
+  const doubles = categories.filter((k) => asNumber(stats[k], 0) >= 10).length;
+  return doubles >= 2 ? 1 : 0;
+}
+
+function RosterPanel({
+  title,
+  rows,
+  loading,
+}: {
+  title: string;
+  rows: MatchupRosterRow[];
+  loading?: boolean;
+}) {
+  return (
+    <div className="brutal-card overflow-x-auto">
+      <div className="px-4 py-3 border-b-2 border-brutal-black font-black uppercase">
+        {title}
+      </div>
+      <table className="brutal-table">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>Pos</th>
+            <th>Status</th>
+            <th>MIN</th>
+            <th>PTS</th>
+            <th>REB</th>
+            <th>AST</th>
+            <th>STL</th>
+            <th>BLK</th>
+            <th>3PM</th>
+            <th>DD</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? (
+            <tr>
+              <td colSpan={11} className="font-medium text-muted">
+                Loading roster...
+              </td>
+            </tr>
+          ) : null}
+          {!loading && rows.length === 0 ? (
+            <tr>
+              <td colSpan={11} className="font-medium text-muted">
+                No roster data available.
+              </td>
+            </tr>
+          ) : null}
+          {rows.map((row, idx) => {
+            const latest = row?.stats?.latestGame;
+            const stats = latest?.stats;
+            const hasLatest = Boolean(stats);
+            const pos =
+              row?.player?.position ??
+              (Array.isArray(row?.player?.positions)
+                ? row.player.positions[0]
+                : undefined) ??
+              "—";
+            const status =
+              row?.roster?.injuryStatus ?? row?.player?.injuryStatus ?? "ACTIVE";
+            return (
+              <tr key={String(row?.roster?._id ?? row?.roster?.espnPlayerId ?? idx)}>
+                <td className="font-bold">
+                  <div>{row?.player?.fullName ?? `Player ${idx + 1}`}</div>
+                  <div className="text-xs font-mono text-muted">
+                    {row?.player?.nbaTeamAbbr ?? "—"}
+                    {latest?.gameDate ? ` · ${latest.gameDate}` : ""}
+                  </div>
+                </td>
+                <td>
+                  <span className="brutal-tag bg-brutal-blue text-brutal-black">
+                    {pos}
+                  </span>
+                </td>
+                <td>
+                  <InjuryBadge status={status} />
+                </td>
+                <td className="font-mono">{hasLatest ? (stats?.min ?? "—") : "—"}</td>
+                <td className="font-mono">{hasLatest ? asNumber(stats?.pts, 0) : "—"}</td>
+                <td className="font-mono">{hasLatest ? asNumber(stats?.reb, 0) : "—"}</td>
+                <td className="font-mono">{hasLatest ? asNumber(stats?.ast, 0) : "—"}</td>
+                <td className="font-mono">{hasLatest ? asNumber(stats?.stl, 0) : "—"}</td>
+                <td className="font-mono">{hasLatest ? asNumber(stats?.blk, 0) : "—"}</td>
+                <td className="font-mono">{hasLatest ? asNumber(stats?.fg3m, 0) : "—"}</td>
+                <td className="font-mono">
+                  {hasLatest ? computeDailyDd(stats) : "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Matchups() {
   const matchupQuery = useQuery(
     convexQuery(api.queries.getCurrentMatchup, convexArgs({}))
   );
   const syncLogQuery = useQuery(
     convexQuery(api.queries.getSyncLog, convexArgs({ limit: 1 }))
+  );
+  const matchupRostersQuery = useQuery(
+    convexQuery((api as any).queries.getCurrentMatchupRosters, convexArgs({}))
   );
 
   const matchup =
@@ -108,6 +250,7 @@ function Matchups() {
   const theirWins = Number.isFinite(matchup.headerOppCategories)
     ? matchup.headerOppCategories
     : fallbackTheirWins;
+  const ties = matchup.scoreSummary?.myTies ?? 0;
   const metaByName = new Map(
     (matchup.meta as any[]).map((row) => [String(row.name), row])
   );
@@ -121,6 +264,10 @@ function Matchups() {
   const lastSyncedLabel = isConvexEnabled
     ? formatAgoFromMs(lastSyncedMs)
     : "2 minutes ago";
+  const myRosterRows = (((matchupRostersQuery.data as any)?.myRoster ??
+    []) as MatchupRosterRow[]);
+  const opponentRosterRows = (((matchupRostersQuery.data as any)?.opponentRoster ??
+    []) as MatchupRosterRow[]);
 
   return (
     <div>
@@ -143,106 +290,157 @@ function Matchups() {
         </div>
       ) : null}
 
-      {/* Score header */}
-      <div className="brutal-card p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <div className="text-center flex-1">
-            <div className="text-lg font-black uppercase">
-              {matchup.myTeam.name}
-            </div>
-            <div className="text-sm font-mono text-muted">
-              {matchup.myTeam.record}
-            </div>
-            {typeof myGamesPlayed === "number" || typeof myAcq === "number" ? (
-              <div className="mt-2 text-xs font-bold text-muted space-y-1">
-                {typeof myGamesPlayed === "number" ? (
-                  <div>Games: {myGamesPlayed}</div>
-                ) : null}
-                {typeof myAcq === "number" ? (
-                  <div>Matchup Acq: {myAcq}</div>
-                ) : null}
-              </div>
-            ) : null}
+      {/* Matchup scoreboard */}
+      <div className="brutal-card overflow-hidden">
+        {/* Score header */}
+        <div className="p-6 flex items-center justify-between">
+          <div className="flex-1">
+            <div className="text-xl font-black">{matchup.myTeam.name}</div>
+            <div className="text-sm text-muted">{matchup.myTeam.record}</div>
           </div>
-          <div className="text-center px-8">
-            <div className="flex items-center gap-3">
-              <span
-                className={`text-5xl font-black ${myWins > theirWins ? "text-brutal-green" : "text-brutal-red"}`}
+          <div className="flex items-center gap-6 px-6">
+            <div className="text-5xl font-black tabular-nums">
+              {scoreString(myWins, theirWins, ties)}
+            </div>
+            <div className="text-5xl font-black tabular-nums">
+              {scoreString(theirWins, myWins, ties)}
+            </div>
+          </div>
+          <div className="flex-1 text-right">
+            <div className="text-xl font-black">{matchup.opponent.name}</div>
+            <div className="text-sm text-muted">{matchup.opponent.record}</div>
+          </div>
+        </div>
+
+        {/* Meta info */}
+        {(typeof myGamesPlayed === "number" || typeof myAcq === "number") && (
+          <div
+            className="px-6 pb-4 flex justify-between text-xs text-muted"
+            style={{ marginTop: "-0.5rem" }}
+          >
+            <div className="space-y-0.5">
+              {typeof myGamesPlayed === "number" && (
+                <div>
+                  <span className="font-bold">Game Limits (Cur/Max):</span>{" "}
+                  {myGamesPlayed}/25 games played
+                </div>
+              )}
+              {typeof myAcq === "number" && (
+                <div>
+                  <span className="font-bold">
+                    Matchup Acquisition Limit (Used/Max):
+                  </span>{" "}
+                  {myAcq} / 7
+                </div>
+              )}
+            </div>
+            <div className="space-y-0.5 text-right">
+              {typeof oppGamesPlayed === "number" && (
+                <div>
+                  <span className="font-bold">Game Limits (Cur/Max):</span>{" "}
+                  {oppGamesPlayed}/25 games played
+                </div>
+              )}
+              {typeof oppAcq === "number" && (
+                <div>
+                  <span className="font-bold">
+                    Matchup Acquisition Limit (Used/Max):
+                  </span>{" "}
+                  {oppAcq} / 7
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Category table */}
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr
+                style={{
+                  borderTop: "2px solid var(--brutal-border)",
+                  borderBottom: "2px solid var(--brutal-border)",
+                }}
               >
-                {myWins}
-              </span>
-              <span className="text-3xl font-bold text-muted">-</span>
-              <span
-                className={`text-5xl font-black ${theirWins > myWins ? "text-brutal-green" : "text-brutal-red"}`}
+                <th className="px-4 py-2 text-left text-xs font-bold uppercase text-muted">
+                  Team
+                </th>
+                {(matchup.categories as MatchupCategoryRow[]).map((cat) => (
+                  <th
+                    key={cat.name}
+                    className="px-3 py-2 text-right text-xs font-bold uppercase text-muted"
+                  >
+                    {cat.name}
+                  </th>
+                ))}
+                <th className="px-3 py-2 text-right text-xs font-bold uppercase text-muted">
+                  Score
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                style={{
+                  borderBottom: "1px solid var(--brutal-border)",
+                }}
               >
-                {theirWins}
-              </span>
-            </div>
-            <div className="text-xs font-bold uppercase text-muted mt-1">
-              Categories
-            </div>
-            {matchup.scoreSummary?.myTies ||
-            matchup.scoreSummary?.opponentTies ? (
-              <div className="text-xs font-mono text-muted mt-1">
-                Ties: {matchup.scoreSummary?.myTies ?? 0}
-              </div>
-            ) : null}
-          </div>
-          <div className="text-center flex-1">
-            <div className="text-lg font-black uppercase">
-              {matchup.opponent.name}
-            </div>
-            <div className="text-sm font-mono text-muted">
-              {matchup.opponent.record}
-            </div>
-            {typeof oppGamesPlayed === "number" ||
-            typeof oppAcq === "number" ? (
-              <div className="mt-2 text-xs font-bold text-muted space-y-1">
-                {typeof oppGamesPlayed === "number" ? (
-                  <div>Games: {oppGamesPlayed}</div>
-                ) : null}
-                {typeof oppAcq === "number" ? (
-                  <div>Matchup Acq: {oppAcq}</div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
+                <td className="px-4 py-3 font-medium text-sm whitespace-nowrap">
+                  {matchup.myTeam.name}
+                </td>
+                {(matchup.categories as MatchupCategoryRow[]).map((cat) => (
+                  <td
+                    key={cat.name}
+                    className={`px-3 py-3 font-mono text-sm text-right ${cat.winning ? "bg-brutal-green/75" : ""}`}
+                  >
+                    {formatCategoryValue(cat, cat.mine)}
+                  </td>
+                ))}
+                <td className="px-3 py-3 font-bold text-sm text-right">
+                  {scoreString(myWins, theirWins, ties)}
+                </td>
+              </tr>
+              <tr>
+                <td className="px-4 py-3 font-medium text-sm whitespace-nowrap">
+                  {matchup.opponent.name}
+                </td>
+                {(matchup.categories as MatchupCategoryRow[]).map((cat) => (
+                  <td
+                    key={cat.name}
+                    className={`px-3 py-3 font-mono text-sm text-right ${!cat.winning ? "bg-brutal-green/75" : ""}`}
+                  >
+                    {formatCategoryValue(cat, cat.theirs)}
+                  </td>
+                ))}
+                <td className="px-3 py-3 font-bold text-sm text-right">
+                  {scoreString(theirWins, myWins, ties)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Category breakdown */}
-      <div className="grid grid-cols-3 gap-4">
-        {(matchup.categories as MatchupCategoryRow[]).map((cat) => (
-          <div
-            key={cat.name}
-            className={`brutal-card p-4 ${cat.winning ? "border-brutal-green" : "border-brutal-red"}`}
-            style={{ borderColor: cat.winning ? "#2ECC71" : "#E74C3C" }}
-          >
-            <div className="text-xs font-black uppercase text-muted mb-2">
-              {cat.name}
-            </div>
-            <div className="flex justify-between items-end">
-              <div
-                className={`text-xl font-black ${cat.winning ? "text-brutal-green" : ""}`}
-              >
-                {cat.name === "FG%" || cat.name === "FT%"
-                  ? (cat.mine * 100).toFixed(1) + "%"
-                  : cat.mine}
-              </div>
-              <div
-                className={`text-xl font-black ${!cat.winning ? "text-brutal-red" : ""}`}
-              >
-                {cat.name === "FG%" || cat.name === "FT%"
-                  ? (cat.theirs * 100).toFixed(1) + "%"
-                  : cat.theirs}
-              </div>
-            </div>
-            <div className="flex justify-between text-xs font-bold text-muted mt-1">
-              <span>ME</span>
-              <span>OPP</span>
-            </div>
+      {isConvexEnabled && matchupRostersQuery.error ? (
+        <div className="brutal-card p-4 mt-4 border-brutal-red">
+          <div className="font-bold text-brutal-red">
+            Failed to load matchup rosters
           </div>
-        ))}
+          <div className="text-sm">{matchupRostersQuery.error.message}</div>
+        </div>
+      ) : null}
+
+      <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <RosterPanel
+          title={`${matchup.myTeam.name} Roster (Daily Stats)`}
+          rows={myRosterRows}
+          loading={Boolean(isConvexEnabled && matchupRostersQuery.isLoading)}
+        />
+        <RosterPanel
+          title={`${matchup.opponent.name} Roster (Daily Stats)`}
+          rows={opponentRosterRows}
+          loading={Boolean(isConvexEnabled && matchupRostersQuery.isLoading)}
+        />
       </div>
 
       <div className="mt-4 text-sm text-muted font-medium">
