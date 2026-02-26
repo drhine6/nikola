@@ -173,4 +173,156 @@ describe('queries.getCurrentMatchup', () => {
       metaStatIds: ['37', '42'],
     })
   })
+
+  it('backfills DD from player game splits when matchup scoreByStat omits DD', async () => {
+    vi.stubEnv('TEAM_ID', '2')
+    vi.stubEnv('ESPN_LEAGUE_ID', '12345')
+    vi.stubEnv('ESPN_SEASON', '2026')
+
+    const t = convexTest(schema, modules as any)
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert('leagues', {
+        leagueKey: '12345:2026',
+        espnLeagueId: '12345',
+        season: 2026,
+        currentScoringPeriodId: 128,
+        currentMatchupPeriodId: 18,
+        updatedAt: 1,
+      })
+
+      await ctx.db.insert('teams', {
+        leagueKey: '12345:2026',
+        espnTeamId: 2,
+        name: 'Free Strahinja',
+        ownerDisplayNames: ['Me'],
+        wins: 11,
+        losses: 6,
+        ties: 0,
+        raw: {
+          roster: {
+            entries: [
+              {
+                playerPoolEntry: {
+                  player: {
+                    id: 2001,
+                    fullName: 'Player A',
+                    stats: [
+                      { statSourceId: 0, statSplitTypeId: 5, scoringPeriodId: 126, stats: { '37': 1 } },
+                      { statSourceId: 0, statSplitTypeId: 5, scoringPeriodId: 128, stats: { '37': 1 } },
+                    ],
+                  },
+                },
+              },
+              {
+                playerPoolEntry: {
+                  player: {
+                    id: 2999,
+                    fullName: 'Bench Guy',
+                    stats: [
+                      { statSourceId: 0, statSplitTypeId: 5, scoringPeriodId: 128, stats: { '37': 4 } },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+        updatedAt: 1,
+      })
+
+      await ctx.db.insert('teams', {
+        leagueKey: '12345:2026',
+        espnTeamId: 6,
+        name: "AR's Herd of GOATs",
+        ownerDisplayNames: ['Them'],
+        wins: 7,
+        losses: 10,
+        ties: 0,
+        raw: {
+          roster: {
+            entries: [
+              {
+                playerPoolEntry: {
+                  player: {
+                    id: 6001,
+                    fullName: 'Player B',
+                    stats: [
+                      { statSourceId: 0, statSplitTypeId: 5, scoringPeriodId: 126, stats: { '37': 2 } },
+                      { statSourceId: 0, statSplitTypeId: 5, scoringPeriodId: 128, stats: { '37': 1 } },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+        updatedAt: 1,
+      })
+
+      await ctx.db.insert('matchups', {
+        matchupKey: '12345:2026:18:6:2',
+        leagueKey: '12345:2026',
+        matchupPeriodId: 18,
+        homeTeamId: 6,
+        awayTeamId: 2,
+        homeScore: 0,
+        awayScore: 0,
+        categories: {
+          home: {
+            wins: 5,
+            losses: 4,
+            ties: 0,
+            scoreByStat: {
+              '0': { score: 100, result: 'WIN' },
+              '37': { score: 1, result: 'LOSS' },
+              '42': { score: 8, result: null },
+            },
+          },
+          away: {
+            wins: 4,
+            losses: 5,
+            ties: 0,
+            scoreByStat: {
+              '0': { score: 90, result: 'LOSS' },
+              '37': { score: 2, result: 'WIN' },
+              '42': { score: 9, result: null },
+            },
+          },
+        },
+        raw: {
+          home: {
+            teamId: 6,
+            pointsByScoringPeriod: { '126': 0, '127': 0 },
+            rosterForMatchupPeriod: { entries: [{ playerId: 6001, lineupSlotId: 0 }] },
+            rosterForCurrentScoringPeriod: { entries: [{ playerId: 6001, lineupSlotId: 0 }] },
+          },
+          away: {
+            teamId: 2,
+            pointsByScoringPeriod: { '126': 0, '127': 0 },
+            rosterForMatchupPeriod: { entries: [{ playerId: 2001, lineupSlotId: 0 }] },
+            rosterForCurrentScoringPeriod: {
+              entries: [
+                { playerId: 2001, lineupSlotId: 0 },
+                { playerId: 2999, lineupSlotId: 12 }, // bench slot should be ignored
+              ],
+            },
+          },
+        },
+        updatedAt: 1,
+      })
+    })
+
+    const matchup = await t.query(api.queries.getCurrentMatchup, {})
+    const ddRow = (matchup as any).categoryBreakdown.find((r: any) => r.statId === '44')
+    expect(ddRow).toMatchObject({
+      statId: '44',
+      name: 'DD',
+      mine: 2,
+      theirs: 3,
+      winning: false,
+      derived: true,
+    })
+    expect((matchup as any).metaBreakdown.map((r: any) => r.statId)).toEqual(['37', '42'])
+  })
 })

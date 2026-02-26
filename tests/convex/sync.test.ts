@@ -89,102 +89,123 @@ describe("sync actions", () => {
 
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            id: 12345,
-            seasonId: 2026,
-            scoringPeriodId: 10,
-            status: { currentMatchupPeriod: 5 },
-            settings: {
-              name: "Nikola Test League",
-              scoringSettings: { scoringType: "H2H_POINTS" }
-            },
-            members: [
-              { id: "m1", firstName: "David", lastName: "Rhine" }
-            ],
-            teams: [
-              {
-                id: 1,
-                name: "Nikola",
-                abbrev: "NIK",
-                owners: ["m1"],
-                record: {
-                  overall: {
-                    wins: 7,
-                    losses: 2,
-                    ties: 0,
-                    pointsFor: 900,
-                    pointsAgainst: 800,
-                    rank: 1
-                  }
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        const isBoxscore = url.includes("view=mBoxscore");
+        const payload = isBoxscore
+          ? {
+              id: 12345,
+              seasonId: 2026,
+              status: { currentMatchupPeriod: 5 },
+              teams: [
+                {
+                  id: 1,
+                  name: "Free Strahinja",
+                  abbrev: "JOK",
+                  rankCalculatedFinal: 1,
+                  record: {
+                    overall: {
+                      wins: 7,
+                      losses: 2,
+                      ties: 0,
+                      pointsFor: 900,
+                      pointsAgainst: 800,
+                    },
+                  },
                 },
-                roster: {
-                  entries: [
-                    {
-                      lineupSlotId: 2,
-                      acquisitionType: "DRAFT",
-                      playerPoolEntry: {
-                        player: {
-                          id: 42,
-                          fullName: "Nikola Jokic",
-                          firstName: "Nikola",
-                          lastName: "Jokic",
-                          eligibleSlots: [2, 3],
-                          proTeamId: 8,
-                          injuryStatus: "ACTIVE",
-                          active: true
+                {
+                  id: 2,
+                  name: "AR's Herd of GOATs",
+                  abbrev: "Andy",
+                  rankCalculatedFinal: 2,
+                  record: {
+                    overall: {
+                      wins: 5,
+                      losses: 4,
+                      ties: 0,
+                      pointsFor: 850,
+                      pointsAgainst: 840,
+                    },
+                  },
+                },
+              ],
+              schedule: [],
+              settings: {},
+            }
+          : {
+              id: 12345,
+              seasonId: 2026,
+              scoringPeriodId: 10,
+              status: { currentMatchupPeriod: 5 },
+              settings: {
+                name: "Nikola Test League",
+                scoringSettings: { scoringType: "H2H_POINTS" }
+              },
+              members: [
+                { id: "m1", firstName: "David", lastName: "Rhine" }
+              ],
+              teams: [
+                {
+                  id: 1,
+                  name: "Team 1",
+                  owners: ["m1"],
+                  roster: {
+                    entries: [
+                      {
+                        lineupSlotId: 2,
+                        acquisitionType: "DRAFT",
+                        playerPoolEntry: {
+                          player: {
+                            id: 42,
+                            fullName: "Nikola Jokic",
+                            firstName: "Nikola",
+                            lastName: "Jokic",
+                            eligibleSlots: [2, 3],
+                            proTeamId: 8,
+                            injuryStatus: "ACTIVE",
+                            active: true
+                          }
                         }
                       }
-                    }
-                  ]
-                }
-              },
-              {
-                id: 2,
-                name: "Opponent",
-                abbrev: "OPP",
-                owners: [],
-                record: {
-                  overall: {
-                    wins: 5,
-                    losses: 4,
-                    ties: 0,
-                    pointsFor: 850,
-                    pointsAgainst: 840,
-                    rank: 2
+                    ]
                   }
                 },
-                roster: { entries: [] }
-              }
-            ],
-            schedule: [
-              {
-                matchupPeriodId: 5,
-                scoringPeriodId: 10,
-                home: { teamId: 1, totalPoints: 50 },
-                away: { teamId: 2, totalPoints: 45 },
-                winner: "HOME"
-              }
-            ],
-            players: [
-              {
-                player: {
-                  id: 99,
-                  fullName: "Free Agent Guy",
-                  firstName: "Free",
-                  lastName: "Agent",
-                  eligibleSlots: [2],
-                  proTeamId: 1,
-                  injuryStatus: "ACTIVE",
-                  active: true
+                {
+                  id: 2,
+                  name: "Team2",
+                  owners: [],
+                  roster: { entries: [] }
                 }
-              }
-            ]
-          }),
+              ],
+              schedule: [
+                {
+                  matchupPeriodId: 5,
+                  scoringPeriodId: 10,
+                  home: { teamId: 1, totalPoints: 50 },
+                  away: { teamId: 2, totalPoints: 45 },
+                  winner: "HOME"
+                }
+              ],
+              players: [
+                {
+                  player: {
+                    id: 99,
+                    fullName: "Free Agent Guy",
+                    firstName: "Free",
+                    lastName: "Agent",
+                    eligibleSlots: [2],
+                    proTeamId: 1,
+                    injuryStatus: "ACTIVE",
+                    active: true
+                  }
+                }
+              ]
+            };
+        return new Response(
+          JSON.stringify(payload),
           { status: 200, headers: { "content-type": "application/json" } },
-        ),
-      ),
+        );
+      }),
     );
 
     const t = convexTest(schema, modules as any);
@@ -209,7 +230,24 @@ describe("sync actions", () => {
 
     const standings = await t.query(api.queries.getStandings, {});
     expect(standings).toHaveLength(2);
-    expect(standings[0]).toMatchObject({ espnTeamId: 1, standingRank: 1 });
+    expect(standings[0]).toMatchObject({
+      espnTeamId: 1,
+      name: "Free Strahinja",
+      abbrev: "JOK",
+      standingRank: 1,
+      wins: 7,
+      losses: 2,
+      ties: 0,
+    });
+    expect(standings[1]).toMatchObject({
+      espnTeamId: 2,
+      name: "AR's Herd of GOATs",
+      abbrev: "Andy",
+      standingRank: 2,
+      wins: 5,
+      losses: 4,
+      ties: 0,
+    });
 
     const freeAgents = await t.query(api.queries.getFreeAgents, { limit: 10 });
     expect(freeAgents).toHaveLength(1);

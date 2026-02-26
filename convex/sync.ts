@@ -180,6 +180,37 @@ function extractMatchupCategories(matchup: AnyRecord) {
   return undefined;
 }
 
+function isPlaceholderTeamName(name: unknown) {
+  return typeof name === "string" && /^team\s*\d+$/i.test(name.trim());
+}
+
+function buildEspnTeamMetadataMap(raw?: AnyRecord) {
+  const map = new Map<number, AnyRecord>();
+  const teams = Array.isArray(raw?.teams) ? raw!.teams : [];
+  for (const team of teams) {
+    const teamId = toNumber(team?.id);
+    if (teamId == null) continue;
+    map.set(teamId, team);
+  }
+  return map;
+}
+
+function chooseEspnTeamName(team: AnyRecord, teamMeta: AnyRecord | undefined, teamId: number) {
+  const candidates = [
+    team?.name,
+    [team?.location, team?.nickname].filter(Boolean).join(" ").trim(),
+    teamMeta?.name,
+    [teamMeta?.location, teamMeta?.nickname].filter(Boolean).join(" ").trim(),
+  ]
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (!isPlaceholderTeamName(candidate)) return candidate;
+  }
+  return candidates[0] ?? `Team ${teamId}`;
+}
+
 function inferGameStatus(statusRaw: any) {
   const statusText =
     (typeof statusRaw === "string" ? statusRaw : undefined) ??
@@ -199,6 +230,9 @@ function inferGameStatus(statusRaw: any) {
 function parseEspnLeagueBundle(
   raw: AnyRecord,
   fetchedAt: number,
+  options?: {
+    boxscoreRaw?: AnyRecord;
+  },
 ): {
   leagueKey: string;
   league: LeagueRow;
@@ -218,6 +252,7 @@ function parseEspnLeagueBundle(
     (Array.isArray(raw.playerPoolEntries) && raw.playerPoolEntries) ||
     [];
   const memberMap = new Map<string, string>();
+  const boxscoreTeamMap = buildEspnTeamMetadataMap(options?.boxscoreRaw);
   for (const member of members) {
     const id = String(member.id ?? "");
     const first = member.firstName ?? "";
@@ -281,30 +316,45 @@ function parseEspnLeagueBundle(
   for (const team of teamsArray) {
     const teamId = toNumber(team.id);
     if (teamId === undefined) continue;
+    const teamMeta = boxscoreTeamMap.get(teamId);
 
     const ownerDisplayNames = Array.isArray(team.owners)
       ? team.owners.map((id: any) => memberMap.get(String(id)) ?? String(id))
       : [];
-    const record = team.record?.overall ?? team.record;
+    const record = team.record?.overall ?? team.record ?? teamMeta?.record?.overall ?? teamMeta?.record;
     const pointsFor = toNumber(record?.pointsFor);
     const pointsAgainst = toNumber(record?.pointsAgainst);
+    const mergedRawTeam = cleanValue({
+      ...(teamMeta ?? {}),
+      ...team,
+      name: teamMeta?.name ?? team.name,
+      abbrev: team.abbrev ?? teamMeta?.abbrev,
+      record: team.record ?? teamMeta?.record,
+      roster: team.roster ?? teamMeta?.roster,
+    });
 
     teamRows.push(cleanValue({
       leagueKey,
       espnTeamId: teamId,
-      name:
-        team.name ??
-        (`${team.location ?? ""} ${team.nickname ?? ""}`.trim() || `Team ${teamId}`),
-      abbrev: team.abbrev,
+      name: chooseEspnTeamName(team, teamMeta, teamId),
+      abbrev: team.abbrev ?? teamMeta?.abbrev,
       ownerDisplayNames,
-      standingRank: toNumber(team.rankCalculatedFinal ?? team.rankFinal ?? team.currentProjectedRank ?? team.playoffSeed ?? record?.rank),
+      standingRank: toNumber(
+        team.rankCalculatedFinal ??
+          team.rankFinal ??
+          team.currentProjectedRank ??
+          team.playoffSeed ??
+          teamMeta?.rankCalculatedFinal ??
+          teamMeta?.rankFinal ??
+          record?.rank,
+      ),
       wins: toNumber(record?.wins),
       losses: toNumber(record?.losses),
       ties: toNumber(record?.ties),
       pointsFor,
       pointsAgainst,
       record,
-      raw: team,
+      raw: mergedRawTeam,
       updatedAt: fetchedAt,
     }));
 
@@ -587,8 +637,13 @@ export const runSyncLeague = internalAction({
       const espnRaw = await ctx.runAction(internal.espn.fetchLeagueViews, {
         views: ["mSettings", "mStatus", "mStandings", "mRoster", "mMatchup", "mFreeAgents"],
       });
+      const espnBoxscoreRaw = await ctx.runAction(internal.espn.fetchLeagueViews, {
+        views: ["mBoxscore"],
+      });
 
-      const parsed = parseEspnLeagueBundle(espnRaw, fetchedAt);
+      const parsed = parseEspnLeagueBundle(espnRaw, fetchedAt, {
+        boxscoreRaw: espnBoxscoreRaw,
+      });
 
       const counts: AnyRecord = {};
       counts.league = await ctx.runMutation(internal.mutations.upsertLeague, { league: parsed.league });
@@ -676,7 +731,12 @@ export const runSyncLive = internalAction({
       const espnRaw = await ctx.runAction(internal.espn.fetchLeagueViews, {
         views: ["mRoster", "mMatchup", "mStandings", "mStatus"],
       });
-      const parsedEspn = parseEspnLeagueBundle(espnRaw, fetchedAt);
+      const espnBoxscoreRaw = await ctx.runAction(internal.espn.fetchLeagueViews, {
+        views: ["mBoxscore"],
+      });
+      const parsedEspn = parseEspnLeagueBundle(espnRaw, fetchedAt, {
+        boxscoreRaw: espnBoxscoreRaw,
+      });
       counts.teams = await ctx.runMutation(internal.mutations.upsertTeams, { teams: parsedEspn.teams });
       counts.rosters = await ctx.runMutation(internal.mutations.upsertRosters, { rows: parsedEspn.rosters });
       counts.matchups = await ctx.runMutation(internal.mutations.upsertMatchups, { rows: parsedEspn.matchups });

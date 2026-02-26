@@ -4,6 +4,7 @@ import { internalAction } from "./_generated/server";
 type EspnView =
   | "mRoster"
   | "mMatchup"
+  | "mBoxscore"
   | "mStandings"
   | "mSettings"
   | "mTeam"
@@ -22,8 +23,8 @@ function requiredEnv(name: string, fallback?: string) {
 }
 
 function baseLeagueUrl() {
-  const season = requiredEnv("LEAGUE_YEAR");
-  const leagueId = requiredEnv("LEAGUE_ID");
+  const season = requiredEnv("ESPN_SEASON", "LEAGUE_YEAR");
+  const leagueId = requiredEnv("ESPN_LEAGUE_ID", "LEAGUE_ID");
   return `https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/${season}/segments/0/leagues/${leagueId}`;
 }
 
